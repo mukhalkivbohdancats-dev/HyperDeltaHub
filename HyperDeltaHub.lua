@@ -5,7 +5,6 @@ local RunService = game:GetService("RunService")
 local VirtualInputManager = game:GetService("VirtualInputManager")
 local CoreGui = game:GetService("CoreGui")
 local Workspace = game:GetService("Workspace")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local player = Players.LocalPlayer
 local mouse = player:GetMouse()
@@ -238,7 +237,6 @@ local tab14 = createTab("WallHop", 13)
 local tab15 = createTab("Spin", 14)
 local tab16 = createTab("Loop TP", 15)
 local tab17 = createTab("ProxPrompt", 16)
-local tab18 = createTab("Games", 17)
 
 tabs["Light"].Button.TextColor3 = Color3.fromRGB(255, 170, 0)
 tabs["Light"].Frame.Visible = true
@@ -464,7 +462,7 @@ end
 
 local function refreshSpecSelection()
 	for name, item in pairs(specUIElements) do
-		item.BackgroundColor3 = (name == selectedSpecPlayer) and Color3.fromRGB(60, 70, 70) or Color3.fromRGB(35, 35, 40)
+		item.BackgroundColor3 = (name == selectedSpecPlayer) and Color3.fromRGB(60, 60, 70) or Color3.fromRGB(35, 35, 40)
 	end
 end
 
@@ -1659,128 +1657,6 @@ createButton(tab17, "ON", UDim2.new(0.05, 0, 0.38, 0), UDim2.new(0.42, 0, 0.24, 
 createButton(tab17, "OFF", UDim2.new(0.53, 0, 0.38, 0), UDim2.new(0.42, 0, 0.24, 0), Color3.fromRGB(200, 50, 50), disableProxPrompt)
 
 -- ==========================================
--- TAB 18: GAMES (MM2 ESP)
--- ==========================================
-local gamesListFrame = Instance.new("Frame", tab18)
-gamesListFrame.Size = UDim2.new(1, 0, 1, 0)
-gamesListFrame.BackgroundTransparency = 1
-gamesListFrame.Visible = true
-
-local mm2Frame = Instance.new("Frame", tab18)
-mm2Frame.Size = UDim2.new(1, 0, 1, 0)
-mm2Frame.BackgroundTransparency = 1
-mm2Frame.Visible = false
-
--- Кнопка відкриття MM2
-createButton(gamesListFrame, "MM2", UDim2.new(0.05, 0, 0.08, 0), UDim2.new(0.9, 0, 0.25, 0), Color3.fromRGB(50, 150, 200), function()
-	gamesListFrame.Visible = false
-	mm2Frame.Visible = true
-end)
-
--- Внутрішня панель MM2
-createButton(mm2Frame, "< Back", UDim2.new(0.05, 0, 0.05, 0), UDim2.new(0.3, 0, 0.2, 0), Color3.fromRGB(70, 70, 80), function()
-	mm2Frame.Visible = false
-	gamesListFrame.Visible = true
-end)
-
-local mm2Title = Instance.new("TextLabel", mm2Frame)
-mm2Title.Size = UDim2.new(0.55, 0, 0.2, 0)
-mm2Title.Position = UDim2.new(0.4, 0, 0.05, 0)
-mm2Title.Text = "MM2 Role ESP"
-mm2Title.Font = Enum.Font.GothamBold
-mm2Title.TextScaled = true
-mm2Title.TextColor3 = Color3.fromRGB(255, 255, 255)
-mm2Title.BackgroundTransparency = 1
-
-local mm2Connection = nil
-local mm2Enabled = false
-
-local function clearMM2Highlights()
-	for _, p in ipairs(Players:GetPlayers()) do
-		if p.Character then
-			local hl = p.Character:FindFirstChild("Highlight")
-			if hl then
-				hl:Destroy()
-			end
-		end
-	end
-end
-
-local function stopMM2()
-	mm2Enabled = false
-	if mm2Connection then
-		mm2Connection:Disconnect()
-		mm2Connection = nil
-	end
-	clearMM2Highlights()
-end
-
-local function startMM2()
-	if mm2Enabled then return end
-	mm2Enabled = true
-
-	mm2Connection = RunService.RenderStepped:Connect(function()
-		if not mm2Enabled then return end
-
-		local getPlayerData = ReplicatedStorage:FindFirstChild("GetPlayerData", true)
-		if not getPlayerData then return end
-
-		local successData, rolesData = pcall(function()
-			return getPlayerData:InvokeServer()
-		end)
-
-		if not successData or not rolesData then return end
-
-		local Sheriff, Murder, Hero
-		for i, v in pairs(rolesData) do
-			if v.Role == "Murderer" then
-				Murder = i
-			elseif v.Role == "Sheriff" then
-				Sheriff = i
-			elseif v.Role == "Hero" then
-				Hero = i
-			end
-		end
-
-		local function IsAlive(plName)
-			if not plName then return false end
-			for i, v in pairs(rolesData) do
-				if i == plName then
-					return not v.Killed and not v.Dead
-				end
-			end
-			return false
-		end
-
-		-- Створення підсвічувань
-		for _, v in ipairs(Players:GetPlayers()) do
-			if v ~= player and v.Character and not v.Character:FindFirstChild("Highlight") then
-				Instance.new("Highlight", v.Character)
-			end
-		end
-
-		-- Оновлення кольорів підсвічувань
-		for _, v in ipairs(Players:GetPlayers()) do
-			if v ~= player and v.Character and v.Character:FindFirstChild("Highlight") then
-				local Highlight = v.Character:FindFirstChild("Highlight")
-				if v.Name == Sheriff and IsAlive(v.Name) then
-					Highlight.FillColor = Color3.fromRGB(0, 0, 225)
-				elseif v.Name == Murder and IsAlive(v.Name) then
-					Highlight.FillColor = Color3.fromRGB(225, 0, 0)
-				elseif v.Name == Hero and IsAlive(v.Name) and not IsAlive(Sheriff) then
-					Highlight.FillColor = Color3.fromRGB(255, 250, 0)
-				else
-					Highlight.FillColor = Color3.fromRGB(0, 225, 0)
-				end
-			end
-		end
-	end)
-end
-
-createButton(mm2Frame, "ON", UDim2.new(0.05, 0, 0.45, 0), UDim2.new(0.42, 0, 0.35, 0), Color3.fromRGB(50, 200, 50), startMM2)
-createButton(mm2Frame, "OFF", UDim2.new(0.53, 0, 0.45, 0), UDim2.new(0.42, 0, 0.35, 0), Color3.fromRGB(200, 50, 50), stopMM2)
-
--- ==========================================
 -- СИСТЕМА ПОВНОГО І БЕЗПЕЧНОГО ОЧИЩЕННЯ
 -- ==========================================
 player.CharacterAdded:Connect(function(newChar)
@@ -1793,7 +1669,6 @@ player.CharacterAdded:Connect(function(newChar)
 	isLoopTeleporting = false
 	pcall(stopSpinning)
 	pcall(disableProxPrompt)
-	pcall(stopMM2)
 	task.wait(1)
 	saveOriginals()
 end)
@@ -1804,7 +1679,6 @@ closeBtn.Activated:Connect(function()
 	pcall(stopFocusingHead)
 	pcall(stopFlingLoop)
 	pcall(disableProxPrompt)
-	pcall(stopMM2)
 	spinFixation = false
 	isLoopTeleporting = false
 	pcall(stopSpinning)
