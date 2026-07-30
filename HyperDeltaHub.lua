@@ -9,8 +9,6 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local player = Players.LocalPlayer
 local mouse = player:GetMouse()
-local character = player.Character or player.CharacterAdded:Wait()
-local rootPart = character:WaitForChild("HumanoidRootPart", 5)
 
 -- ==========================================
 -- ЗБЕРЕЖЕННЯ ОРИГІНАЛЬНИХ НАЛАШТУВАНЬ
@@ -21,20 +19,29 @@ local originalUseJumpPower = true
 
 local function saveOriginals()
 	local char = player.Character
-	if char and char:FindFirstChildOfClass("Humanoid") then
-		originalSpeed = char:FindFirstChildOfClass("Humanoid").WalkSpeed
-		originalJumpPower = char:FindFirstChildOfClass("Humanoid").JumpPower
-		originalUseJumpPower = char:FindFirstChildOfClass("Humanoid").UseJumpPower
+	if char then
+		local hum = char:FindFirstChildOfClass("Humanoid")
+		if hum then
+			originalSpeed = hum.WalkSpeed
+			originalJumpPower = hum.JumpPower
+			originalUseJumpPower = hum.UseJumpPower
+		end
 	end
 end
 saveOriginals()
 
--- Очищення попередніх версій
-if CoreGui:FindFirstChild("QuantumDeltaHub") then
-	CoreGui.QuantumDeltaHub:Destroy()
-elseif player:WaitForChild("PlayerGui"):FindFirstChild("QuantumDeltaHub") then
-	player.PlayerGui.QuantumDeltaHub:Destroy()
-end
+-- Безпечне очищення попередніх версій
+pcall(function()
+	if CoreGui:FindFirstChild("QuantumDeltaHub") then
+		CoreGui.QuantumDeltaHub:Destroy()
+	end
+end)
+pcall(function()
+	local pg = player:FindFirstChild("PlayerGui")
+	if pg and pg:FindFirstChild("QuantumDeltaHub") then
+		pg.QuantumDeltaHub:Destroy()
+	end
+end)
 
 -- ==========================================
 -- ОСНОВНЕ СТВОРЕННЯ GUI
@@ -212,11 +219,13 @@ local function createTextBox(parent, placeholder, text, pos, size)
 end
 
 local function Message(Title, Text, Time)
-	game:GetService("StarterGui"):SetCore("SendNotification", {
-		Title = Title,
-		Text = Text,
-		Duration = Time or 5
-	})
+	pcall(function()
+		game:GetService("StarterGui"):SetCore("SendNotification", {
+			Title = Title,
+			Text = Text,
+			Duration = Time or 5
+		})
+	end)
 end
 
 -- ==========================================
@@ -249,33 +258,40 @@ tabs["Light"].Frame.Visible = true
 local originalAmbient = Lighting.Ambient
 local originalOutdoorAmbient = Lighting.OutdoorAmbient
 local originalFogEnd = Lighting.FogEnd
-
-local currentRoot = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-local lightFolder = Instance.new("Folder")
-lightFolder.Name = "UltraZoneLights"
-if currentRoot then lightFolder.Parent = currentRoot end
-
-for i = 1, 6 do
-	local light = Instance.new("PointLight")
-	light.Range = 60
-	light.Brightness = 28 * i
-	light.Shadows = false
-	light.Enabled = false
-	light.Parent = lightFolder
-end
+local lightFolder = nil
 
 local function toggleLight(state)
-	for _, light in ipairs(lightFolder:GetChildren()) do
-		if light:IsA("PointLight") then light.Enabled = state end
-	end
-	if state then
-		Lighting.Ambient = Color3.fromRGB(255, 255, 255)
-		Lighting.OutdoorAmbient = Color3.fromRGB(255, 255, 255)
-		Lighting.FogEnd = 999999
-	else
+	local char = player.Character
+	local hrp = char and char:FindFirstChild("HumanoidRootPart")
+
+	if not state then
+		if lightFolder then lightFolder:Destroy() lightFolder = nil end
 		Lighting.Ambient = originalAmbient
 		Lighting.OutdoorAmbient = originalOutdoorAmbient
 		Lighting.FogEnd = originalFogEnd
+		return
+	end
+
+	if hrp then
+		if not lightFolder or lightFolder.Parent ~= hrp then
+			if lightFolder then lightFolder:Destroy() end
+			lightFolder = Instance.new("Folder")
+			lightFolder.Name = "UltraZoneLights"
+			lightFolder.Parent = hrp
+
+			for i = 1, 6 do
+				local light = Instance.new("PointLight")
+				light.Range = 60
+				light.Brightness = 28 * i
+				light.Shadows = false
+				light.Enabled = true
+				light.Parent = lightFolder
+			end
+		end
+
+		Lighting.Ambient = Color3.fromRGB(255, 255, 255)
+		Lighting.OutdoorAmbient = Color3.fromRGB(255, 255, 255)
+		Lighting.FogEnd = 999999
 	end
 end
 
@@ -303,9 +319,11 @@ infJumpBtn.Activated:Connect(function()
 	if infJumpState then
 		infJumpBtn.Text = "OFF"
 		infJumpBtn.BackgroundColor3 = Color3.fromRGB(50, 200, 50)
+		if infJumpConnection then infJumpConnection:Disconnect() end
 		infJumpConnection = UserInputService.JumpRequest:Connect(function()
-			if player.Character and player.Character:FindFirstChildOfClass("Humanoid") then
-				player.Character:FindFirstChildOfClass("Humanoid"):ChangeState(Enum.HumanoidStateType.Jumping)
+			local char = player.Character
+			if char and char:FindFirstChildOfClass("Humanoid") then
+				char:FindFirstChildOfClass("Humanoid"):ChangeState(Enum.HumanoidStateType.Jumping)
 			end
 		end)
 	else
@@ -372,9 +390,10 @@ end
 
 wpSaveBtn.Activated:Connect(function()
 	local name = wpNameInput.Text
-	if name ~= "" and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+	local char = player.Character
+	if name ~= "" and char and char:FindFirstChild("HumanoidRootPart") then
 		if savedWaypoints[name] then return end
-		savedWaypoints[name] = player.Character.HumanoidRootPart.CFrame
+		savedWaypoints[name] = char.HumanoidRootPart.CFrame
 		
 		local item = Instance.new("TextButton", wpScroll)
 		item.Size = UDim2.new(1, -8, 0, 24) 
@@ -404,8 +423,9 @@ wpSaveBtn.Activated:Connect(function()
 end)
 
 wpTeleportBtn.Activated:Connect(function()
-	if selectedWaypoint and savedWaypoints[selectedWaypoint] and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
-		player.Character.HumanoidRootPart.CFrame = savedWaypoints[selectedWaypoint]
+	local char = player.Character
+	if selectedWaypoint and savedWaypoints[selectedWaypoint] and char and char:FindFirstChild("HumanoidRootPart") then
+		char.HumanoidRootPart.CFrame = savedWaypoints[selectedWaypoint]
 	end
 end)
 
@@ -573,17 +593,19 @@ local function stopFocusingHead()
 	isFocusingHead = false
 	if focusHeadBtn then focusHeadBtn.Text = "Focus Head" focusHeadBtn.BackgroundColor3 = Color3.fromRGB(70, 70, 80) end
 	if focusHeadConnection then focusHeadConnection:Disconnect() focusHeadConnection = nil end
-	workspace.CurrentCamera.CameraType = Enum.CameraType.Custom
-	if player.Character and player.Character:FindFirstChildOfClass("Humanoid") then
-		workspace.CurrentCamera.CameraSubject = player.Character:FindFirstChildOfClass("Humanoid")
+	Workspace.CurrentCamera.CameraType = Enum.CameraType.Custom
+	local char = player.Character
+	if char and char:FindFirstChildOfClass("Humanoid") then
+		Workspace.CurrentCamera.CameraSubject = char:FindFirstChildOfClass("Humanoid")
 	end
 end
 
 local function stopTeleporting()
 	if teleportConnection then teleportConnection:Disconnect() teleportConnection = nil end
 	activeTeleport = nil
-	if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
-		player.Character.HumanoidRootPart.Anchored = false
+	local char = player.Character
+	if char and char:FindFirstChild("HumanoidRootPart") then
+		char.HumanoidRootPart.Anchored = false
 	end
 	if tpPlatform then tpPlatform:Destroy() tpPlatform = nil end 
 	if tpBehindBtn then tpBehindBtn.BackgroundColor3 = Color3.fromRGB(70, 70, 80) end
@@ -603,16 +625,17 @@ local function startTeleporting(mode, btn)
 	tpPlatform.Transparency = 1
 	tpPlatform.Anchored = true
 	tpPlatform.CanCollide = true
-	tpPlatform.Parent = workspace
+	tpPlatform.Parent = Workspace
 
 	teleportConnection = RunService.Heartbeat:Connect(function()
 		local target = Players:FindFirstChild(selectedTpPlayer or "")
-		if target and target.Character and target.Character:FindFirstChild("HumanoidRootPart") and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
-			local hrp = player.Character.HumanoidRootPart
+		local char = player.Character
+		if target and target.Character and target.Character:FindFirstChild("HumanoidRootPart") and char and char:FindFirstChild("HumanoidRootPart") then
+			local hrp = char.HumanoidRootPart
 			
 			hrp.Anchored = true
-			hrp.Velocity = Vector3.new(0, 0, 0)
-			hrp.RotVelocity = Vector3.new(0, 0, 0)
+			hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+			hrp.AssemblyRotVelocity = Vector3.new(0, 0, 0)
 			
 			local targetCFrame = target.Character.HumanoidRootPart.CFrame
 			local desiredCFrame
@@ -621,7 +644,7 @@ local function startTeleporting(mode, btn)
 			elseif mode == "Above" then desiredCFrame = targetCFrame * CFrame.new(0, 10, 0)
 			elseif mode == "Under" then
 				desiredCFrame = targetCFrame * CFrame.new(0, -3.5, 0)
-				for _, part in ipairs(player.Character:GetChildren()) do
+				for _, part in ipairs(char:GetChildren()) do
 					if part:IsA("BasePart") then part.CanCollide = true end
 				end
 			end
@@ -646,13 +669,14 @@ focusHeadBtn = createButton(tab4, "Focus", UDim2.new(0.05, 0, 0.86, 0), UDim2.ne
 			isFocusingHead = true focusHeadBtn.Text = "Stop" focusHeadBtn.BackgroundColor3 = Color3.fromRGB(50, 200, 50) 
 			focusHeadConnection = RunService.RenderStepped:Connect(function()
 				local t = Players:FindFirstChild(selectedTpPlayer or "")
-				local localHead = player.Character and player.Character:FindFirstChild("Head")
+				local char = player.Character
+				local localHead = char and char:FindFirstChild("Head")
 				if t and t.Character and t.Character:FindFirstChild("Head") and localHead then
-					workspace.CurrentCamera.CameraType = Enum.CameraType.Scriptable
-					workspace.CurrentCamera.CFrame = CFrame.lookAt(localHead.Position, t.Character.Head.Position)
+					Workspace.CurrentCamera.CameraType = Enum.CameraType.Scriptable
+					Workspace.CurrentCamera.CFrame = CFrame.lookAt(localHead.Position, t.Character.Head.Position)
 				else
-					workspace.CurrentCamera.CameraType = Enum.CameraType.Custom
-					if player.Character and player.Character:FindFirstChildOfClass("Humanoid") then workspace.CurrentCamera.CameraSubject = player.Character:FindFirstChildOfClass("Humanoid") end
+					Workspace.CurrentCamera.CameraType = Enum.CameraType.Custom
+					if char and char:FindFirstChildOfClass("Humanoid") then Workspace.CurrentCamera.CameraSubject = char:FindFirstChildOfClass("Humanoid") end
 				end
 			end)
 		end
@@ -669,8 +693,9 @@ local spectateConnection = nil
 local function stopSpectating()
 	isSpectating = false spectateBtn.Text = "Spectate" spectateBtn.BackgroundColor3 = Color3.fromRGB(150, 100, 200)
 	if spectateConnection then spectateConnection:Disconnect() spectateConnection = nil end
-	workspace.CurrentCamera.CameraType = Enum.CameraType.Custom
-	if player.Character and player.Character:FindFirstChildOfClass("Humanoid") then workspace.CurrentCamera.CameraSubject = player.Character:FindFirstChildOfClass("Humanoid") end
+	Workspace.CurrentCamera.CameraType = Enum.CameraType.Custom
+	local char = player.Character
+	if char and char:FindFirstChildOfClass("Humanoid") then Workspace.CurrentCamera.CameraSubject = char:FindFirstChildOfClass("Humanoid") end
 end
 
 spectateBtn.Activated:Connect(function()
@@ -683,8 +708,8 @@ spectateBtn.Activated:Connect(function()
 				if t and t.Character then
 					local humanoid = t.Character:FindFirstChildOfClass("Humanoid")
 					if humanoid then
-						workspace.CurrentCamera.CameraType = Enum.CameraType.Custom
-						if workspace.CurrentCamera.CameraSubject ~= humanoid then workspace.CurrentCamera.CameraSubject = humanoid end
+						Workspace.CurrentCamera.CameraType = Enum.CameraType.Custom
+						if Workspace.CurrentCamera.CameraSubject ~= humanoid then Workspace.CurrentCamera.CameraSubject = humanoid end
 					end
 				else stopSpectating() end
 			end)
@@ -708,8 +733,9 @@ local studsInput = createTextBox(tab6, "Enter studs...", "", UDim2.new(0.05, 0, 
 
 createButton(tab6, "Teleport", UDim2.new(0.05, 0, 0.68, 0), UDim2.new(0.9, 0, 0.24, 0), Color3.fromRGB(200, 120, 0), function()
 	local studs = tonumber(studsInput.Text)
-	if studs and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
-		local hrp = player.Character.HumanoidRootPart
+	local char = player.Character
+	if studs and char and char:FindFirstChild("HumanoidRootPart") then
+		local hrp = char.HumanoidRootPart
 		hrp.CFrame = hrp.CFrame * CFrame.new(0, 0, -studs)
 	end
 end)
@@ -719,7 +745,7 @@ end)
 -- ==========================================
 local Config = { WalkSpeed = originalSpeed, JumpPower = originalJumpPower, ForceSpeed = false, ForceJump = false }
 
-RunService.RenderStepped:Connect(function()
+local speedJumpConnection = RunService.RenderStepped:Connect(function()
 	local char = player.Character
 	if char and char:FindFirstChildOfClass("Humanoid") then
 		local hum = char:FindFirstChildOfClass("Humanoid")
@@ -789,12 +815,12 @@ local function startFlying()
 	bg.MaxTorque = Vector3.new(math.huge, math.huge, math.huge) 
 	bg.P = 1000000 
 	bg.D = 500
-	bg.CFrame = workspace.CurrentCamera.CFrame
+	bg.CFrame = Workspace.CurrentCamera.CFrame
 
 	flyConnection = RunService.RenderStepped:Connect(function()
 		if not isFlying or not char or not char:FindFirstChild("HumanoidRootPart") then stopFlying() return end
 		
-		local cam = workspace.CurrentCamera 
+		local cam = Workspace.CurrentCamera 
 		bg.CFrame = cam.CFrame
 		local moveDir = humanoid.MoveDirection 
 		local baseVel = Vector3.new(0, 0, 0)
@@ -914,7 +940,7 @@ forwardNoclipBtn.Activated:Connect(function()
 				local rayParams = RaycastParams.new() rayParams.FilterDescendantsInstances = {char} rayParams.FilterType = Enum.RaycastFilterType.Exclude
 				local origins = { hrp.Position, hrp.Position + Vector3.new(0, 1.5, 0) }
 				for _, origin in ipairs(origins) do
-					local result = workspace:Raycast(origin, moveDir * 2.5, rayParams)
+					local result = Workspace:Raycast(origin, moveDir * 2.5, rayParams)
 					if result and result.Instance and result.Instance:IsA("BasePart") and result.Instance.CanCollide then insideWall = true break end
 				end
 			end
@@ -976,7 +1002,7 @@ tpGoTimeBtn.Activated:Connect(function()
 end)
 
 -- ==========================================
--- TAB 13: МОМЕНТАЛЬНИЙ FLING (БЕЗ ПОКРОКОВОГО ТП)
+-- TAB 13: МОМЕНТАЛЬНИЙ FLING
 -- ==========================================
 local function SkidFling(TargetPlayer)
 	local Character = player.Character
@@ -993,19 +1019,19 @@ local function SkidFling(TargetPlayer)
 	if Accessory and Accessory:FindFirstChild("Handle") then Handle = Accessory.Handle end
 	
 	if Character and Humanoid and RootPart then
-		if RootPart.Velocity.Magnitude < 50 then getgenv().OldPos = RootPart.CFrame end
+		if RootPart.AssemblyLinearVelocity.Magnitude < 50 then getgenv().OldPos = RootPart.CFrame end
 		
-		if THead then workspace.CurrentCamera.CameraSubject = THead
-		elseif Handle then workspace.CurrentCamera.CameraSubject = Handle
-		elseif THumanoid and TRootPart then workspace.CurrentCamera.CameraSubject = THumanoid end
+		if THead then Workspace.CurrentCamera.CameraSubject = THead
+		elseif Handle then Workspace.CurrentCamera.CameraSubject = Handle
+		elseif THumanoid then Workspace.CurrentCamera.CameraSubject = THumanoid end
 		
 		if not TCharacter:FindFirstChildWhichIsA("BasePart") then return end
 		
 		local FPos = function(BasePart, Pos, Ang)
 			RootPart.CFrame = CFrame.new(BasePart.Position) * Pos * Ang
 			Character:SetPrimaryPartCFrame(CFrame.new(BasePart.Position) * Pos * Ang)
-			RootPart.Velocity = Vector3.new(9e7, 9e7 * 10, 9e7)
-			RootPart.RotVelocity = Vector3.new(9e8, 9e8, 9e8)
+			RootPart.AssemblyLinearVelocity = Vector3.new(9e7, 9e7 * 10, 9e7)
+			RootPart.AssemblyRotVelocity = Vector3.new(9e8, 9e8, 9e8)
 		end
 		
 		local SFBasePart = function(BasePart)
@@ -1014,42 +1040,23 @@ local function SkidFling(TargetPlayer)
 			local Angle = 0
 			repeat
 				if RootPart and THumanoid then
-					if BasePart.Velocity.Magnitude < 50 then
+					if BasePart.AssemblyLinearVelocity.Magnitude < 50 then
 						Angle = Angle + 100
-						FPos(BasePart, CFrame.new(0, 1.5, 0) + THumanoid.MoveDirection * BasePart.Velocity.Magnitude / 1.25, CFrame.Angles(math.rad(Angle),0 ,0))
+						FPos(BasePart, CFrame.new(0, 1.5, 0) + THumanoid.MoveDirection * BasePart.AssemblyLinearVelocity.Magnitude / 1.25, CFrame.Angles(math.rad(Angle),0 ,0))
 						task.wait()
-						FPos(BasePart, CFrame.new(0, -1.5, 0) + THumanoid.MoveDirection * BasePart.Velocity.Magnitude / 1.25, CFrame.Angles(math.rad(Angle), 0, 0))
-						task.wait()
-						FPos(BasePart, CFrame.new(0, 1.5, 0) + THumanoid.MoveDirection * BasePart.Velocity.Magnitude / 1.25, CFrame.Angles(math.rad(Angle),0 ,0))
-						task.wait()
-						FPos(BasePart, CFrame.new(0, -1.5, 0) + THumanoid.MoveDirection * BasePart.Velocity.Magnitude / 1.25, CFrame.Angles(math.rad(Angle), 0, 0))
-						task.wait()
-						FPos(BasePart, CFrame.new(0, 1.5, 0) + THumanoid.MoveDirection, CFrame.Angles(math.rad(Angle),0 ,0))
-						task.wait()
-						FPos(BasePart, CFrame.new(0, -1.5, 0) + THumanoid.MoveDirection, CFrame.Angles(math.rad(Angle), 0, 0))
+						FPos(BasePart, CFrame.new(0, -1.5, 0) + THumanoid.MoveDirection * BasePart.AssemblyLinearVelocity.Magnitude / 1.25, CFrame.Angles(math.rad(Angle), 0, 0))
 						task.wait()
 					else
 						FPos(BasePart, CFrame.new(0, 1.5, THumanoid.WalkSpeed), CFrame.Angles(math.rad(90), 0, 0))
 						task.wait()
 						FPos(BasePart, CFrame.new(0, -1.5, -THumanoid.WalkSpeed), CFrame.Angles(0, 0, 0))
 						task.wait()
-						FPos(BasePart, CFrame.new(0, 1.5, THumanoid.WalkSpeed), CFrame.Angles(math.rad(90), 0, 0))
-						task.wait()
-						
-						FPos(BasePart, CFrame.new(0, -1.5, 0), CFrame.Angles(math.rad(90), 0, 0))
-						task.wait()
-						FPos(BasePart, CFrame.new(0, -1.5, 0), CFrame.Angles(0, 0, 0))
-						task.wait()
-						FPos(BasePart, CFrame.new(0, -1.5, 0), CFrame.Angles(math.rad(90), 0, 0))
-						task.wait()
-						FPos(BasePart, CFrame.new(0, -1.5, 0), CFrame.Angles(0, 0, 0))
-						task.wait()
 					end
 				end
 			until Time + TimeToWait < tick() or not FlingActive
 		end
 		
-		workspace.FallenPartsDestroyHeight = 0/0
+		Workspace.FallenPartsDestroyHeight = -50000
 		local BV = Instance.new("BodyVelocity")
 		BV.Parent = RootPart
 		BV.Velocity = Vector3.new(0, 0, 0)
@@ -1064,19 +1071,19 @@ local function SkidFling(TargetPlayer)
 		
 		BV:Destroy()
 		Humanoid:SetStateEnabled(Enum.HumanoidStateType.Seated, true)
-		workspace.CurrentCamera.CameraSubject = Humanoid
+		Workspace.CurrentCamera.CameraSubject = Humanoid
 		
 		if getgenv().OldPos then
 			repeat
 				RootPart.CFrame = getgenv().OldPos * CFrame.new(0, .5, 0)
 				Character:SetPrimaryPartCFrame(getgenv().OldPos * CFrame.new(0, .5, 0))
-				Humanoid:ChangeState("GettingUp")
+				Humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
 				for _, part in pairs(Character:GetChildren()) do
-					if part:IsA("BasePart") then part.Velocity, part.RotVelocity = Vector3.new(), Vector3.new() end
+					if part:IsA("BasePart") then part.AssemblyLinearVelocity, part.AssemblyRotVelocity = Vector3.new(), Vector3.new() end
 				end
 				task.wait()
 			until (RootPart.Position - getgenv().OldPos.p).Magnitude < 25
-			workspace.FallenPartsDestroyHeight = getgenv().FPDH
+			Workspace.FallenPartsDestroyHeight = getgenv().FPDH or -500
 		end
 	else
 		return Message("Error", "Your character is not ready", 2)
@@ -1150,7 +1157,7 @@ createButton(tab13, "SELECT ALL", UDim2.new(0.05, 0, 0.81, 0), UDim2.new(0.42, 0
 createButton(tab13, "DESELECT ALL", UDim2.new(0.53, 0, 0.81, 0), UDim2.new(0.42, 0, 0.14, 0), Color3.fromRGB(60, 60, 70), function() ToggleAllFlingPlayers(false) end)
 
 -- ==========================================
--- TAB 14: WALLHOP FUNCTIONALITY & LOGIC
+-- TAB 14: WALLHOP
 -- ==========================================
 local wallhopToggle = false
 local autoToggle = false
@@ -1380,8 +1387,8 @@ local function updateSpinFixationLoop()
 		local hrp = char and char:FindFirstChild("HumanoidRootPart")
 		local hum = char and char:FindFirstChildOfClass("Humanoid")
 		if hrp then
-			hrp.RotVelocity = Vector3.new(0, 0, 0)
-			hrp.Velocity = Vector3.new(0, 0, 0)
+			hrp.AssemblyRotVelocity = Vector3.new(0, 0, 0)
+			hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
 			hrp.Anchored = false
 		end
 		if hum then
@@ -1404,26 +1411,26 @@ local function updateSpinFixationLoop()
 					
 					if spinToggle then
 						hrp.Anchored = false
-						hrp.RotVelocity = Vector3.new(9e8, 9e8, 9e8)
-						hrp.Velocity = Vector3.new(9e7, 9e7 * 10, 9e7)
+						hrp.AssemblyRotVelocity = Vector3.new(9e8, 9e8, 9e8)
+						hrp.AssemblyLinearVelocity = Vector3.new(9e7, 9e7 * 10, 9e7)
 						hrp.CFrame = CFrame.new(fixedCFrame.Position) * (hrp.CFrame - hrp.CFrame.Position)
 						if hum then hum:SetStateEnabled(Enum.HumanoidStateType.Seated, false) end
 					else
 						hrp.CFrame = fixedCFrame
 						hrp.Anchored = true
-						hrp.RotVelocity = Vector3.new(0, 0, 0)
-						hrp.Velocity = Vector3.new(0, 0, 0)
+						hrp.AssemblyRotVelocity = Vector3.new(0, 0, 0)
+						hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
 					end
 				else
 					fixedCFrame = nil
 					hrp.Anchored = false
 					if spinToggle then
-						hrp.RotVelocity = Vector3.new(9e8, 9e8, 9e8)
-						hrp.Velocity = Vector3.new(9e7, 9e7 * 10, 9e7)
+						hrp.AssemblyRotVelocity = Vector3.new(9e8, 9e8, 9e8)
+						hrp.AssemblyLinearVelocity = Vector3.new(9e7, 9e7 * 10, 9e7)
 						if hum then hum:SetStateEnabled(Enum.HumanoidStateType.Seated, false) end
 					else
-						hrp.RotVelocity = Vector3.new(0, 0, 0)
-						hrp.Velocity = Vector3.new(0, 0, 0)
+						hrp.AssemblyRotVelocity = Vector3.new(0, 0, 0)
+						hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
 					end
 				end
 			end
@@ -1554,8 +1561,9 @@ end
 loopSaveBtn.Activated:Connect(function()
 	local name = loopNameInput.Text
 	if name == "" then name = "Point " .. tostring(#loopWaypoints + 1) end
-	if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
-		table.insert(loopWaypoints, {Name = name, CFrame = player.Character.HumanoidRootPart.CFrame})
+	local char = player.Character
+	if char and char:FindFirstChild("HumanoidRootPart") then
+		table.insert(loopWaypoints, {Name = name, CFrame = char.HumanoidRootPart.CFrame})
 		loopNameInput.Text = ""
 		refreshLoopList()
 	end
@@ -1586,8 +1594,8 @@ loopStartBtn.Activated:Connect(function()
 			if hrp then
 				hrp.CFrame = loopWaypoints[i].CFrame
 				hrp.Anchored = true 
-				hrp.Velocity = Vector3.new(0, 0, 0)
-				hrp.RotVelocity = Vector3.new(0, 0, 0)
+				hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+				hrp.AssemblyRotVelocity = Vector3.new(0, 0, 0)
 			end
 			if i < #loopWaypoints then
 				task.wait(delayTime)
@@ -1654,7 +1662,7 @@ createButton(tab17, "ON", UDim2.new(0.05, 0, 0.38, 0), UDim2.new(0.42, 0, 0.24, 
 createButton(tab17, "OFF", UDim2.new(0.53, 0, 0.38, 0), UDim2.new(0.42, 0, 0.24, 0), Color3.fromRGB(200, 50, 50), disableProxPrompt)
 
 -- ==========================================
--- TAB 18: GAMES (MM2 ESP - ВИПРАВЛЕНО)
+-- TAB 18: GAMES (MM2 ESP)
 -- ==========================================
 local gamesListFrame = Instance.new("Frame", tab18)
 gamesListFrame.Size = UDim2.new(1, 0, 1, 0)
@@ -1721,11 +1729,10 @@ local function startMM2()
 	if mm2Enabled then return end
 	mm2Enabled = true
 
-	-- Фоновий потік отримання ролей з сервера без зависання клієнта
 	task.spawn(function()
 		while mm2Enabled do
 			local getPlayerData = ReplicatedStorage:FindFirstChild("GetPlayerData", true)
-			if getPlayerData then
+			if getPlayerData and getPlayerData:IsA("RemoteFunction") then
 				pcall(function()
 					mm2Roles = getPlayerData:InvokeServer()
 				end)
@@ -1734,7 +1741,6 @@ local function startMM2()
 		end
 	end)
 
-	-- Цикл оновлення візуального підсвічування
 	task.spawn(function()
 		while mm2Enabled do
 			for _, v in ipairs(Players:GetPlayers()) do
@@ -1751,10 +1757,12 @@ local function startMM2()
 					local role = nil
 					local isDead = false
 
-					if mm2Roles and mm2Roles[v.Name] then
+					if mm2Roles and type(mm2Roles) == "table" and mm2Roles[v.Name] then
 						local data = mm2Roles[v.Name]
-						role = data.Role
-						isDead = data.Killed or data.Dead
+						if type(data) == "table" then
+							role = data.Role
+							isDead = data.Killed or data.Dead
+						end
 					end
 
 					if not role then
@@ -1786,10 +1794,9 @@ createButton(mm2Frame, "ON", UDim2.new(0.05, 0, 0.45, 0), UDim2.new(0.42, 0, 0.3
 createButton(mm2Frame, "OFF", UDim2.new(0.53, 0, 0.45, 0), UDim2.new(0.42, 0, 0.35, 0), Color3.fromRGB(200, 50, 50), stopMM2)
 
 -- ==========================================
--- СИСТЕМА ПОВНОГО І БЕЗПЕЧНОГО ОЧИЩЕННЯ
+-- ОЧИЩЕННЯ ТА ЗАКРИТТЯ
 -- ==========================================
-player.CharacterAdded:Connect(function(newChar)
-	character = newChar
+player.CharacterAdded:Connect(function()
 	stopFlying()
 	stopGlobalNoclip()
 	stopForwardNoclip()
@@ -1819,7 +1826,8 @@ closeBtn.Activated:Connect(function()
 	if whJumpConnection then pcall(function() whJumpConnection:Disconnect() end) end
 	if whAutoJumpConnection then pcall(function() whAutoJumpConnection:Disconnect() end) end
 	if whMouseClickConnection then pcall(function() whMouseClickConnection:Disconnect() end) end
-	
+	if speedJumpConnection then pcall(function() speedJumpConnection:Disconnect() end) end
+
 	Config.ForceSpeed = false
 	Config.ForceJump = false
 	pcall(stopFlying)
@@ -1837,6 +1845,6 @@ closeBtn.Activated:Connect(function()
 		c.HumanoidRootPart.Anchored = false 
 	end
 	
-	workspace.FallenPartsDestroyHeight = getgenv().FPDH or workspace.FallenPartsDestroyHeight
+	Workspace.FallenPartsDestroyHeight = getgenv().FPDH or Workspace.FallenPartsDestroyHeight
 	if screenGui then screenGui:Destroy() end
 end)
