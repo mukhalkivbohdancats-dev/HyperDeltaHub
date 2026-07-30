@@ -10,7 +10,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local player = Players.LocalPlayer
 local mouse = player:GetMouse()
 local character = player.Character or player.CharacterAdded:Wait()
-local rootPart = character:WaitForChild("HumanoidRootPart")
+local rootPart = character:WaitForChild("HumanoidRootPart", 5)
 
 -- ==========================================
 -- ЗБЕРЕЖЕННЯ ОРИГІНАЛЬНИХ НАЛАШТУВАНЬ
@@ -250,10 +250,10 @@ local originalAmbient = Lighting.Ambient
 local originalOutdoorAmbient = Lighting.OutdoorAmbient
 local originalFogEnd = Lighting.FogEnd
 
-local lightFolder = rootPart:FindFirstChild("UltraZoneLights") or Instance.new("Folder")
+local currentRoot = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+local lightFolder = Instance.new("Folder")
 lightFolder.Name = "UltraZoneLights"
-lightFolder.Parent = rootPart
-lightFolder:ClearAllChildren()
+if currentRoot then lightFolder.Parent = currentRoot end
 
 for i = 1, 6 do
 	local light = Instance.new("PointLight")
@@ -496,7 +496,6 @@ local function updatePlayerLists()
 	
 	for _, p in ipairs(Players:GetPlayers()) do
 		if p ~= player then
-			-- Вкладка TP
 			local tpItem = Instance.new("TextButton", plrScroll)
 			tpItem.Size = UDim2.new(1, -8, 0, 24)
 			tpItem.Text = " " .. p.Name
@@ -508,7 +507,6 @@ local function updatePlayerLists()
 			tpUIElements[p.Name] = tpItem
 			tpItem.Activated:Connect(function() selectedTpPlayer = p.Name refreshTpSelection() end)
 			
-			-- Вкладка Spectate
 			local specItem = Instance.new("TextButton", specScroll)
 			specItem.Size = UDim2.new(1, -8, 0, 24)
 			specItem.Text = " " .. p.Name
@@ -520,7 +518,6 @@ local function updatePlayerLists()
 			specUIElements[p.Name] = specItem
 			specItem.Activated:Connect(function() selectedSpecPlayer = p.Name refreshSpecSelection() end)
 
-			-- Вкладка Fling
 			local flingItem = Instance.new("TextButton", flingScroll)
 			flingItem.Size = UDim2.new(1, -8, 0, 24)
 			flingItem.Font = Enum.Font.Gotham
@@ -629,9 +626,7 @@ local function startTeleporting(mode, btn)
 				end
 			end
 			
-			-- МИТТЄВИЙ ТЕЛЕПОРТ БЕЗ ПОКРОКОВИХ ОБМЕЖЕНЬ
 			hrp.CFrame = desiredCFrame
-			
 			if tpPlatform then
 				tpPlatform.CFrame = hrp.CFrame * CFrame.new(0, -3.5, 0)
 			end
@@ -1659,7 +1654,7 @@ createButton(tab17, "ON", UDim2.new(0.05, 0, 0.38, 0), UDim2.new(0.42, 0, 0.24, 
 createButton(tab17, "OFF", UDim2.new(0.53, 0, 0.38, 0), UDim2.new(0.42, 0, 0.24, 0), Color3.fromRGB(200, 50, 50), disableProxPrompt)
 
 -- ==========================================
--- TAB 18: GAMES (MM2 ESP)
+-- TAB 18: GAMES (MM2 ESP - ВИПРАВЛЕНО)
 -- ==========================================
 local gamesListFrame = Instance.new("Frame", tab18)
 gamesListFrame.Size = UDim2.new(1, 0, 1, 0)
@@ -1671,13 +1666,11 @@ mm2Frame.Size = UDim2.new(1, 0, 1, 0)
 mm2Frame.BackgroundTransparency = 1
 mm2Frame.Visible = false
 
--- Кнопка відкриття MM2
 createButton(gamesListFrame, "MM2", UDim2.new(0.05, 0, 0.08, 0), UDim2.new(0.9, 0, 0.25, 0), Color3.fromRGB(50, 150, 200), function()
 	gamesListFrame.Visible = false
 	mm2Frame.Visible = true
 end)
 
--- Внутрішня панель MM2
 createButton(mm2Frame, "< Back", UDim2.new(0.05, 0, 0.05, 0), UDim2.new(0.3, 0, 0.2, 0), Color3.fromRGB(70, 70, 80), function()
 	mm2Frame.Visible = false
 	gamesListFrame.Visible = true
@@ -1692,87 +1685,99 @@ mm2Title.TextScaled = true
 mm2Title.TextColor3 = Color3.fromRGB(255, 255, 255)
 mm2Title.BackgroundTransparency = 1
 
-local mm2Connection = nil
 local mm2Enabled = false
+local mm2Roles = {}
 
 local function clearMM2Highlights()
 	for _, p in ipairs(Players:GetPlayers()) do
 		if p.Character then
-			local hl = p.Character:FindFirstChild("Highlight")
-			if hl then
-				hl:Destroy()
-			end
+			local hl = p.Character:FindFirstChild("MM2_Highlight")
+			if hl then hl:Destroy() end
 		end
 	end
 end
 
 local function stopMM2()
 	mm2Enabled = false
-	if mm2Connection then
-		mm2Connection:Disconnect()
-		mm2Connection = nil
-	end
 	clearMM2Highlights()
+end
+
+local function getRoleByTools(p)
+	if not p then return nil end
+	local char = p.Character
+	local backpack = p:FindFirstChild("Backpack")
+	
+	local function checkContainer(container)
+		if not container then return nil end
+		if container:FindFirstChild("Knife") or container:FindFirstChild("KnifeServer") then return "Murderer" end
+		if container:FindFirstChild("Gun") or container:FindFirstChild("Revolver") then return "Sheriff" end
+		return nil
+	end
+	
+	return checkContainer(char) or checkContainer(backpack)
 end
 
 local function startMM2()
 	if mm2Enabled then return end
 	mm2Enabled = true
 
-	mm2Connection = RunService.RenderStepped:Connect(function()
-		if not mm2Enabled then return end
-
-		local getPlayerData = ReplicatedStorage:FindFirstChild("GetPlayerData", true)
-		if not getPlayerData then return end
-
-		local successData, rolesData = pcall(function()
-			return getPlayerData:InvokeServer()
-		end)
-
-		if not successData or not rolesData then return end
-
-		local Sheriff, Murder, Hero
-		for i, v in pairs(rolesData) do
-			if v.Role == "Murderer" then
-				Murder = i
-			elseif v.Role == "Sheriff" then
-				Sheriff = i
-			elseif v.Role == "Hero" then
-				Hero = i
+	-- Фоновий потік отримання ролей з сервера без зависання клієнта
+	task.spawn(function()
+		while mm2Enabled do
+			local getPlayerData = ReplicatedStorage:FindFirstChild("GetPlayerData", true)
+			if getPlayerData then
+				pcall(function()
+					mm2Roles = getPlayerData:InvokeServer()
+				end)
 			end
+			task.wait(1)
 		end
+	end)
 
-		local function IsAlive(plName)
-			if not plName then return false end
-			for i, v in pairs(rolesData) do
-				if i == plName then
-					return not v.Killed and not v.Dead
+	-- Цикл оновлення візуального підсвічування
+	task.spawn(function()
+		while mm2Enabled do
+			for _, v in ipairs(Players:GetPlayers()) do
+				if v ~= player and v.Character then
+					local char = v.Character
+					local hl = char:FindFirstChild("MM2_Highlight")
+					if not hl then
+						hl = Instance.new("Highlight")
+						hl.Name = "MM2_Highlight"
+						hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+						hl.Parent = char
+					end
+
+					local role = nil
+					local isDead = false
+
+					if mm2Roles and mm2Roles[v.Name] then
+						local data = mm2Roles[v.Name]
+						role = data.Role
+						isDead = data.Killed or data.Dead
+					end
+
+					if not role then
+						role = getRoleByTools(v)
+					end
+
+					if isDead then
+						hl.Enabled = false
+					else
+						hl.Enabled = true
+						if role == "Murderer" then
+							hl.FillColor = Color3.fromRGB(255, 0, 0)
+						elseif role == "Sheriff" then
+							hl.FillColor = Color3.fromRGB(0, 0, 255)
+						elseif role == "Hero" then
+							hl.FillColor = Color3.fromRGB(255, 255, 0)
+						else
+							hl.FillColor = Color3.fromRGB(0, 255, 0)
+						end
+					end
 				end
 			end
-			return false
-		end
-
-		-- Створення підсвічувань
-		for _, v in ipairs(Players:GetPlayers()) do
-			if v ~= player and v.Character and not v.Character:FindFirstChild("Highlight") then
-				Instance.new("Highlight", v.Character)
-			end
-		end
-
-		-- Оновлення кольорів підсвічувань
-		for _, v in ipairs(Players:GetPlayers()) do
-			if v ~= player and v.Character and v.Character:FindFirstChild("Highlight") then
-				local Highlight = v.Character:FindFirstChild("Highlight")
-				if v.Name == Sheriff and IsAlive(v.Name) then
-					Highlight.FillColor = Color3.fromRGB(0, 0, 225)
-				elseif v.Name == Murder and IsAlive(v.Name) then
-					Highlight.FillColor = Color3.fromRGB(225, 0, 0)
-				elseif v.Name == Hero and IsAlive(v.Name) and not IsAlive(Sheriff) then
-					Highlight.FillColor = Color3.fromRGB(255, 250, 0)
-				else
-					Highlight.FillColor = Color3.fromRGB(0, 225, 0)
-				end
-			end
+			task.wait(0.1)
 		end
 	end)
 end
