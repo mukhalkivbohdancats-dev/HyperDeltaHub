@@ -9,8 +9,8 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local player = Players.LocalPlayer
 local mouse = player:GetMouse()
-local character = player.Character or player.CharacterAdded:Wait()
-local rootPart = character:WaitForChild("HumanoidRootPart")
+-- ВИДАЛЕНО: Жорстке очікування HumanoidRootPart при старті.
+-- Це дозволяє GUI запускатися в іграх навіть до того, як заспавниться персонаж.
 
 -- ==========================================
 -- ЗБЕРЕЖЕННЯ ОРИГІНАЛЬНИХ НАЛАШТУВАНЬ
@@ -250,24 +250,30 @@ local originalAmbient = Lighting.Ambient
 local originalOutdoorAmbient = Lighting.OutdoorAmbient
 local originalFogEnd = Lighting.FogEnd
 
-local lightFolder = rootPart:FindFirstChild("UltraZoneLights") or Instance.new("Folder")
-lightFolder.Name = "UltraZoneLights"
-lightFolder.Parent = rootPart
-lightFolder:ClearAllChildren()
-
-for i = 1, 6 do
-	local light = Instance.new("PointLight")
-	light.Range = 60
-	light.Brightness = 28 * i
-	light.Shadows = false
-	light.Enabled = false
-	light.Parent = lightFolder
-end
-
 local function toggleLight(state)
+	local char = player.Character
+	local rp = char and char:FindFirstChild("HumanoidRootPart")
+	if not rp then return end
+
+	local lightFolder = rp:FindFirstChild("UltraZoneLights")
+	if not lightFolder then
+		lightFolder = Instance.new("Folder")
+		lightFolder.Name = "UltraZoneLights"
+		lightFolder.Parent = rp
+		for i = 1, 6 do
+			local light = Instance.new("PointLight")
+			light.Range = 60
+			light.Brightness = 28 * i
+			light.Shadows = false
+			light.Enabled = false
+			light.Parent = lightFolder
+		end
+	end
+
 	for _, light in ipairs(lightFolder:GetChildren()) do
 		if light:IsA("PointLight") then light.Enabled = state end
 	end
+	
 	if state then
 		Lighting.Ambient = Color3.fromRGB(255, 255, 255)
 		Lighting.OutdoorAmbient = Color3.fromRGB(255, 255, 255)
@@ -980,7 +986,7 @@ tpGoTimeBtn.Activated:Connect(function()
 end)
 
 -- ==========================================
--- TAB 13: FLING
+-- TAB 13: МОМЕНТАЛЬНИЙ FLING (БЕЗ ПОКРОКОВОГО ТП)
 -- ==========================================
 local function SkidFling(TargetPlayer)
 	local Character = player.Character
@@ -1154,7 +1160,7 @@ createButton(tab13, "SELECT ALL", UDim2.new(0.05, 0, 0.81, 0), UDim2.new(0.42, 0
 createButton(tab13, "DESELECT ALL", UDim2.new(0.53, 0, 0.81, 0), UDim2.new(0.42, 0, 0.14, 0), Color3.fromRGB(60, 60, 70), function() ToggleAllFlingPlayers(false) end)
 
 -- ==========================================
--- TAB 14: WALLHOP
+-- TAB 14: WALLHOP FUNCTIONALITY & LOGIC
 -- ==========================================
 local wallhopToggle = false
 local autoToggle = false
@@ -1658,7 +1664,7 @@ createButton(tab17, "ON", UDim2.new(0.05, 0, 0.38, 0), UDim2.new(0.42, 0, 0.24, 
 createButton(tab17, "OFF", UDim2.new(0.53, 0, 0.38, 0), UDim2.new(0.42, 0, 0.24, 0), Color3.fromRGB(200, 50, 50), disableProxPrompt)
 
 -- ==========================================
--- TAB 18: GAMES (ПОФІКШЕНИЙ MM2 ESP)
+-- TAB 18: GAMES (MM2 ESP)
 -- ==========================================
 local gamesListFrame = Instance.new("Frame", tab18)
 gamesListFrame.Size = UDim2.new(1, 0, 1, 0)
@@ -1670,13 +1676,11 @@ mm2Frame.Size = UDim2.new(1, 0, 1, 0)
 mm2Frame.BackgroundTransparency = 1
 mm2Frame.Visible = false
 
--- Кнопка відкриття MM2
 createButton(gamesListFrame, "MM2", UDim2.new(0.05, 0, 0.08, 0), UDim2.new(0.9, 0, 0.25, 0), Color3.fromRGB(50, 150, 200), function()
 	gamesListFrame.Visible = false
 	mm2Frame.Visible = true
 end)
 
--- Внутрішня панель MM2
 createButton(mm2Frame, "< Back", UDim2.new(0.05, 0, 0.05, 0), UDim2.new(0.3, 0, 0.2, 0), Color3.fromRGB(70, 70, 80), function()
 	mm2Frame.Visible = false
 	gamesListFrame.Visible = true
@@ -1691,13 +1695,13 @@ mm2Title.TextScaled = true
 mm2Title.TextColor3 = Color3.fromRGB(255, 255, 255)
 mm2Title.BackgroundTransparency = 1
 
-local mm2RenderConnection = nil
 local mm2Enabled = false
 
 local function clearMM2Highlights()
 	for _, p in ipairs(Players:GetPlayers()) do
 		if p.Character then
-			local hl = p.Character:FindFirstChild("Highlight")
+			-- Видаляємо тільки свої ESP, щоб не зламати інші ігри
+			local hl = p.Character:FindFirstChild("QDH_MM2_ESP")
 			if hl then
 				hl:Destroy()
 			end
@@ -1707,10 +1711,6 @@ end
 
 local function stopMM2()
 	mm2Enabled = false
-	if mm2RenderConnection then
-		mm2RenderConnection:Disconnect()
-		mm2RenderConnection = nil
-	end
 	clearMM2Highlights()
 end
 
@@ -1718,29 +1718,20 @@ local function startMM2()
 	if mm2Enabled then return end
 	mm2Enabled = true
 
-	local rolesData = {}
-	local Sheriff, Murder, Hero
-
-	local function IsAlive(plName)
-		if not plName or not rolesData then return false end
-		local pData = rolesData[plName]
-		if pData then
-			return not pData.Killed and not pData.Dead
-		end
-		return false
-	end
-
-	-- Фоновий потік для безпечного опитування сервера (кожні 0.3 сек)
+	-- Замість того, щоб навантажувати систему 60 разів на секунду через RenderStepped,
+	-- оновлюємо дані акуратно 1 раз на секунду в окремому потоці.
 	task.spawn(function()
 		while mm2Enabled do
 			local getPlayerData = ReplicatedStorage:FindFirstChild("GetPlayerData", true)
+			
+			-- Перевірка чи це точно RemoteFunction (запобігає крашам в інших іграх)
 			if getPlayerData and getPlayerData:IsA("RemoteFunction") then
-				local success, result = pcall(function()
+				local successData, rolesData = pcall(function()
 					return getPlayerData:InvokeServer()
 				end)
-				if success and type(result) == "table" then
-					rolesData = result
-					Sheriff, Murder, Hero = nil, nil, nil
+
+				if successData and type(rolesData) == "table" then
+					local Sheriff, Murder, Hero
 					for i, v in pairs(rolesData) do
 						if v.Role == "Murderer" then
 							Murder = i
@@ -1750,35 +1741,39 @@ local function startMM2()
 							Hero = i
 						end
 					end
+
+					local function IsAlive(plName)
+						if not plName then return false end
+						local pData = rolesData[plName]
+						if pData then
+							return not pData.Killed and not pData.Dead
+						end
+						return false
+					end
+
+					for _, v in ipairs(Players:GetPlayers()) do
+						if v ~= player and v.Character then
+							local Highlight = v.Character:FindFirstChild("QDH_MM2_ESP")
+							if not Highlight then
+								Highlight = Instance.new("Highlight")
+								Highlight.Name = "QDH_MM2_ESP"
+								Highlight.Parent = v.Character
+							end
+							
+							if v.Name == Sheriff and IsAlive(v.Name) then
+								Highlight.FillColor = Color3.fromRGB(0, 0, 225)
+							elseif v.Name == Murder and IsAlive(v.Name) then
+								Highlight.FillColor = Color3.fromRGB(225, 0, 0)
+							elseif v.Name == Hero and IsAlive(v.Name) and not IsAlive(Sheriff) then
+								Highlight.FillColor = Color3.fromRGB(255, 250, 0)
+							else
+								Highlight.FillColor = Color3.fromRGB(0, 225, 0)
+							end
+						end
+					end
 				end
 			end
-			task.wait(0.3)
-		end
-	end)
-
-	-- Плавне оновлення кольорів ESP у кадрі
-	mm2RenderConnection = RunService.RenderStepped:Connect(function()
-		if not mm2Enabled then return end
-
-		for _, v in ipairs(Players:GetPlayers()) do
-			if v ~= player and v.Character then
-				local hl = v.Character:FindFirstChild("Highlight")
-				if not hl then
-					hl = Instance.new("Highlight")
-					hl.Name = "Highlight"
-					hl.Parent = v.Character
-				end
-
-				if v.Name == Sheriff and IsAlive(v.Name) then
-					hl.FillColor = Color3.fromRGB(0, 0, 225)
-				elseif v.Name == Murder and IsAlive(v.Name) then
-					hl.FillColor = Color3.fromRGB(225, 0, 0)
-				elseif v.Name == Hero and IsAlive(v.Name) and not IsAlive(Sheriff) then
-					hl.FillColor = Color3.fromRGB(255, 250, 0)
-				else
-					hl.FillColor = Color3.fromRGB(0, 225, 0)
-				end
-			end
+			task.wait(1) 
 		end
 	end)
 end
@@ -1789,8 +1784,7 @@ createButton(mm2Frame, "OFF", UDim2.new(0.53, 0, 0.45, 0), UDim2.new(0.42, 0, 0.
 -- ==========================================
 -- СИСТЕМА ПОВНОГО І БЕЗПЕЧНОГО ОЧИЩЕННЯ
 -- ==========================================
-player.CharacterAdded:Connect(function(newChar)
-	character = newChar
+player.CharacterAdded:Connect(function()
 	stopFlying()
 	stopGlobalNoclip()
 	stopForwardNoclip()
