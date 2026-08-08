@@ -36,7 +36,7 @@ local Config = {
     YoutubeURL      = "https://www.youtube.com/channel/UCAlXXV1Hbvf7WbfXARuVtiQ",
 
     -- [5] File System
-    KeyFileName     = "Mykey.txt", -- The name of the file where the valid key will be saved for auto-login
+    KeyFileName     = "key.txt", -- The name of the file where the valid key will be saved for auto-login
 
     -- [6] GUI Management
     OldGuiName      = "Hyper Delta Hub", -- Name of the old GUI to destroy if it's already open
