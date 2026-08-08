@@ -1,21 +1,3 @@
-
-
--- ⚠️ IMPORTANT: Put this code at the VERY TOP of your Main Script (before obfuscating) ⚠️
-
-local ProtectionConfig = {
-    -- 🔴 CRITICAL: This MUST exactly match the 'Secret' value in your Key System's Config!
-    -- If your Key System has: Secret = "Bohdancatnapcats50"
-    -- Then this must also be: SecretKey = "Bohdancatnapcats50"
-    SecretKey = "Bohdancatnapcats50",
-    
-    -- The name of your Hub (shown in the kick message if they try to bypass)
-    HubName = "Hyper Delta Hub"
-}
-
--------------------------------------------------------------------------------
--- 👇 YOUR MAIN SCRIPT CODE STARTS HERE 👇
--------------------------------------------------------------------------------
-
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local Lighting = game:GetService("Lighting")
